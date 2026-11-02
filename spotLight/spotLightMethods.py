@@ -33,36 +33,20 @@ class TransparentWindow(QWidget):
         )
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     
-    def set_colors(self, colors):   # ✅ one parameter — the grid
+    def set_colors(self, colors):
         self.colors = [QColor(int(r), int(g), int(b)) for (r, g, b) in colors]
         self.update()
         
-    def _outline_path(self, rect: QRect, radius_left: int, radius_right: int):
+    def _outer_outline_path(self, full_rect: QRect, radius: int):
         path = QPainterPath()
-        path.moveTo(rect.left(), rect.bottom())  # bottom-left (always sharp)
-
-        # Left edge up to top-left corner
-        path.lineTo(rect.left(), rect.top() + radius_left)
-        if radius_left > 0:
-            path.quadTo(
-                rect.left(), rect.top(),
-                rect.left() + radius_left, rect.top()
-            )
-        else:
-            path.lineTo(rect.left(), rect.top())
-
-        # Across the top to the top-right corner
-        path.lineTo(rect.right() - radius_right, rect.top())
-        if radius_right > 0:
-            path.quadTo(
-                rect.right(), rect.top(),
-                rect.right(), rect.top() + radius_right
-            )
-        else:
-            path.lineTo(rect.right(), rect.top())
-
-        # Down the right edge, then close (bottom-right is always sharp)
-        path.lineTo(rect.right(), rect.bottom())
+        path.moveTo(full_rect.left(), full_rect.bottom())
+        path.lineTo(full_rect.left(), full_rect.top() + radius)
+        path.quadTo(full_rect.left(), full_rect.top(),
+                    full_rect.left() + radius, full_rect.top())
+        path.lineTo(full_rect.right() - radius, full_rect.top())
+        path.quadTo(full_rect.right(), full_rect.top(),
+                    full_rect.right(), full_rect.top() + radius)
+        path.lineTo(full_rect.right(), full_rect.bottom())
         path.closeSubpath()
         return path
     
@@ -74,23 +58,14 @@ class TransparentWindow(QWidget):
         y_center = int(self.screen_height * self.box_positions[0][1])
         half_h = self.box_height // 2
         
+        full_rect = QRect(0, y_center - half_h, self.screen_width, self.box_height)
+        outer_path = self._outer_outline_path(full_rect, radius)
+        
         for i in range(self.num_boxes):
             x_start = i * self.box_width
-            # Last box absorbs any leftover pixels from integer division
             width = self.box_width if i < self.num_boxes - 1 else (self.screen_width - x_start)
 
-            rect = QRect(
-                x_start,
-                y_center - half_h,
-                width,
-                self.box_height,
-            )
-            
-            radius_left = radius if i == 0 else 0
-            radius_right = radius if i == self.num_boxes - 1 else 0
-            
-            path = self._outline_path(rect, radius_left, radius_right)
-            
+            rect = QRect(x_start, y_center - half_h, width, self.box_height)
             color = self.colors[i] if i < len(self.colors) else QColor("#FF5733")
                     
             gradient = QRadialGradient(
@@ -107,8 +82,14 @@ class TransparentWindow(QWidget):
             gradient.setColorAt(1, color_end)
 
             painter.setBrush(gradient)
-            painter.setPen(QPen(QColor(0, 0, 0, 200), 0))
-            painter.drawPath(path)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(rect)
+        
+        painter.setClipping(False)
+        
+        painter.setPen(QPen(QColor(0, 0, 0, 200), 0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(outer_path)
         
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
